@@ -98,13 +98,18 @@ def get_save_path() -> str:
 def download_all_versions():
     log.info("Start download all versions")
     latest_version = get_latest_version()
+    tow_test = False
     with httpx.Client(headers=headers, http2=True) as client:
         while True:
             time.sleep(2)
             download_url = get_download_url(latest=False)
             if not check_download_version(download_url, client=client):
                 # 文件不存在了，就证明minor版本号该下一位了 有些没有.1只有.2的会无法自动处理，可以手动解决
-                next_version(minor=True)
+                if tow_test:
+                    next_version(minor=True)
+                    tow_test = False
+                else:
+                    next_version()
                 continue
             download_apk(download_url, get_save_path(), client=client)
             if get_version() == latest_version:
