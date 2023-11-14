@@ -110,6 +110,7 @@ def download_all_versions():
                     tow_test = False
                 else:
                     next_version()
+                    tow_test = True
                 continue
             download_apk(download_url, get_save_path(), client=client)
             if get_version() == latest_version:
