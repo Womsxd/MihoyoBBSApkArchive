@@ -1,12 +1,27 @@
+"""
+Project : MihoyoBBSApkArchive
+License : GNU General Public License v3.0
+
+一个下载米游社全部下载APK的脚本
+
+Usage:
+    python download_all_apk.py
+Options:
+    -h, --help      显示帮助信息
+    -o, --overwrite 覆盖已存在的APK文件
+"""
 import os
 import logging
+import argparse
 import concurrent.futures
+
 import httpx
+
+OVERWRITE_APK = True
 
 headers = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
                   "Chrome/115.0.0.0 Safari/537.36"}
-overwrite_apk = True
 
 logging.basicConfig(
     level=logging.INFO,
@@ -98,12 +113,12 @@ def download_apk(url: str) -> bool:
     """
     # check if the file exists already
     apk_file_name = url.split("/")[-1]
-    major, minor, rev = url.split("_")[1].split(".")
+    major, minor, _ = url.split("_")[1].split(".")
     series_name = f"{major}.{str(minor)[:-1]}x" if int(minor) >= 10 else f"{major}.x"
     save_path = f"apk/{major}/{series_name}/"
     os.makedirs(save_path, exist_ok=True)
 
-    if not overwrite_apk and os.path.exists(save_path + url.split("/")[-1]):
+    if not OVERWRITE_APK and os.path.exists(save_path + url.split("/")[-1]):
         log.info(f"{apk_file_name} already exists, skip the download task.")
         return True
     try:
@@ -158,6 +173,20 @@ def download_all_versions() -> None:
                 log.error("Some downloads failed")
 
 
+def parse_args() -> argparse.Namespace:
+    """
+    解析命令行参数
+    :return: 命令行参数的命名空间
+    """
+    parser = argparse.ArgumentParser(description="一个下载米游社全部下载APK的脚本")
+    parser.add_argument('-o', '--overwrite', action='store_true', help='覆盖已存在的APK文件')
+    args = parser.parse_args()
+    return args
+
+
 if __name__ == "__main__":
+    user_args = parse_args()
+    if user_args.overwrite:
+        OVERWRITE_APK = False
     log.info("Starting MihoyoBBS Apk Downloader...")
     download_all_versions()
