@@ -1,12 +1,12 @@
 import os
-import time
 import httpx
 import logging
+import concurrent.futures
 
-version = [1, 0, 2]
-minor_start_code = 0
 headers = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"}
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 "
+                  "Safari/537.36"}
+overwrite_apk = True
 
 logging.basicConfig(
     level=logging.INFO,
@@ -24,98 +24,108 @@ def get_latest_version() -> str:
     return data["data"]["version"]
 
 
-def get_version() -> str:
-    return ".".join([str(x) for x in version])
+def generate_predicted_version_dict() -> dict:
+    version_dict = {}
+    latest_version = get_latest_version().split(".")
+    for major in range(1, int(latest_version[0]) + 1):
+        if major == int(latest_version[0]):
+            for minor in range(0, int(latest_version[1])):
+                k_value = f"{major}.{minor}"
+                version_dict[k_value] = [rev for rev in range(0, 10)]
+        elif major == 1:
+            for minor in range(0, 10):
+                k_value = f"{major}.{minor}"
+                version_dict[k_value] = [rev for rev in range(0, 10)]
+        else:
+            for minor in range(0, 100):
+                k_value = f"{major}.{minor}"
+                version_dict[k_value] = [rev for rev in range(0, 10)]
+    return version_dict
 
 
-def next_version(minor: bool = False) -> None:
-    global version, minor_start_code
-    if version == [1, 9, 1]:
-        # 1.x版本的终结，直接跳入2.x时代
-        version = [2, 0, 0]
-        log.info(f"Next version: 2.0.0")
-        return
-    if minor:
-        version[1] += 1
-        if version[1] == 11:
-            # 2.11.1 开始minor更新后第一位为1
-            minor_start_code = 1
-        version[2] = minor_start_code
-    else:
-        version[2] += 1
-    log.info(f"Next version: {get_version()}")
+def generate_available_version_list(major_minor_str: str, rev_list: list) -> list:
+    client = httpx.Client(headers=headers, http2=True)
+    major, minor = major_minor_str.split(".")
+    available_version_num_list = []
+    available_version_url_list = []
+    downloaded = False
+    channel = "gf" if int(minor) <= 45 and int(major) in [1, 2] else "miyousheluodi"
+    for rev in rev_list:
+        this_version = f"{major_minor_str}.{rev}"
+        download_url = f"https://download-bbs.miyoushe.com/app/mihoyobbs_{this_version}_{channel}.apk"
+        if client.head(download_url).status_code == 404:
+            log.info(f"Version {this_version} not found")
+            if downloaded:
+                break
+            continue
+        elif client.head(download_url).status_code == 200:
+            log.info(f"Version {this_version} is available")
+            available_version_url_list.append(download_url)
+            available_version_num_list.append(this_version)
+            downloaded = True
+        else:
+            log.error(f"Version {this_version} unknown error: {client.head(download_url).status_code}")
+    log.info(f"Version {major_minor_str} check finished: {available_version_num_list} are available")
+    return available_version_url_list
 
 
-def get_download_url(latest: bool = True) -> str:
-    if latest:
-        download_version = get_latest_version()
-        mionr = download_version.split(".")[1]
-    else:
-        download_version = get_version()
-        mionr = version[1]
-    channel = "miyousheluodi"
-    if mionr <= 45:
-        # 2.45.1和之前的版本gf为后缀
-        channel = "gf"
-    return f"https://download-bbs.miyoushe.com/app/mihoyobbs_{download_version}_{channel}.apk"
+def download_apk(url: str) -> bool:
+    # check if the file exists already
+    apk_file_name = url.split("/")[-1]
+    major, minor, rev = url.split("_")[1].split(".")
+    series_name = f"{major}.{str(minor)[:-1]}x" if int(minor) >= 10 else f"{major}.x"
+    save_path = f"apk/{major}/{series_name}/"
+    os.makedirs(save_path, exist_ok=True)
 
-
-def check_download_version(download_url: str, client=httpx) -> bool:
-    status_code = client.head(download_url).status_code
-    if status_code == 404:
-        # 简单的判断，404证明文件不存在，返回False
-        log.info(f"Version {get_version()} inexistence")
-        return False
-    return True
-
-
-def download_apk(download_url: str, save_path: str, client=httpx) -> bool:
+    if not overwrite_apk and os.path.exists(save_path + url.split("/")[-1]):
+        log.info(f"{apk_file_name} already exists, skip the download task.")
+        return True
     try:
-        resp = client.get(download_url)
-        with open(save_path+download_url.split("/")[-1], "wb") as f:
+        log.info(f"Start downloading: {url}")
+        resp = httpx.get(url, headers=headers)
+        with open(save_path + apk_file_name, "wb") as f:
             f.write(resp.content)
     except OSError:
-        log.error(f"Save version {get_version()} failed")
+        log.error(f"Save version {apk_file_name} failed")
         return False
     else:
-        log.info(f"Download version {get_version()} OK")
+        log.info(f"Download version {apk_file_name} OK")
         return True
 
 
-def check_save_path(save_path: str):
-    if not os.path.exists(save_path):
-        log.info(f"Create directory {save_path}")
-        os.makedirs(save_path)
-
-
-def get_save_path() -> str:
-    save_path = f"./apk/{version[0]}/{version[0]}.{version[1]}"
-    save_path = f"{save_path[:-1]}x/"
-    check_save_path(save_path)
-    return save_path
-
-
 def download_all_versions():
-    log.info("Start download all versions")
-    latest_version = get_latest_version()
-    tow_test = False
-    with httpx.Client(headers=headers, http2=True) as client:
-        while True:
-            time.sleep(2)
-            download_url = get_download_url(latest=False)
-            if not check_download_version(download_url, client=client):
-                # 文件不存在了，就证明minor版本号该下一位了 有些没有.1只有.2的会无法自动处理，可以手动解决
-                if tow_test:
-                    next_version(minor=True)
-                    tow_test = False
-                else:
-                    next_version()
-                    tow_test = True
-                continue
-            download_apk(download_url, get_save_path(), client=client)
-            if get_version() == latest_version:
-                break
-            next_version()
+    log.info("Start fetch all versions metadata")
+    cpu_count = os.cpu_count()
+    all_available_versions = []
+    predicted_version_dict = generate_predicted_version_dict()
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=cpu_count) as executor:
+        # Submit version generation tasks to the ThreadPoolExecutor
+        version_tasks = {
+            executor.submit(generate_available_version_list, major_minor, rev_list): (major_minor, rev_list)
+            for major_minor, rev_list in predicted_version_dict.items()
+        }
+
+        # Collect results
+        for future in concurrent.futures.as_completed(version_tasks):
+            available_versions = future.result()
+            all_available_versions.extend(available_versions)
+    log.info(f"All version checks completed, {len(all_available_versions)} versions are available")
+
+    # Download tasks
+    log.info("Start download all available versions")
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=cpu_count) as executor:
+        # Submit download tasks to the ThreadPoolExecutor
+        download_tasks = [
+            executor.submit(download_apk, v) for v in all_available_versions
+        ]
+
+        # Wait for all tasks to complete
+        for future in concurrent.futures.as_completed(download_tasks):
+            result = future.result()
+            if not result:
+                log.error("Some downloads failed")
 
 
 if __name__ == "__main__":
