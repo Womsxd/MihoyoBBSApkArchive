@@ -48,17 +48,21 @@ def generate_available_version_list(major_minor_str: str, rev_list: list) -> lis
     major, minor = major_minor_str.split(".")
     available_version_num_list = []
     available_version_url_list = []
+    downloaded = False
     channel = "gf" if int(minor) <= 45 and int(major) in [1, 2] else "miyousheluodi"
     for rev in rev_list:
         this_version = f"{major_minor_str}.{rev}"
         download_url = f"https://download-bbs.miyoushe.com/app/mihoyobbs_{this_version}_{channel}.apk"
         if client.head(download_url).status_code == 404:
             log.info(f"Version {this_version} not found")
+            if downloaded:
+                break
             continue
         elif client.head(download_url).status_code == 200:
             log.info(f"Version {this_version} is available")
             available_version_url_list.append(download_url)
             available_version_num_list.append(this_version)
+            downloaded = True
         else:
             log.error(f"Version {this_version} unknown error: {client.head(download_url).status_code}")
     log.info(f"Version {major_minor_str} check finished: {available_version_num_list} are available")
@@ -69,7 +73,7 @@ def download_apk(url: str) -> bool:
     # check if the file exists already
     apk_file_name = url.split("/")[-1]
     major, minor, rev = url.split("_")[1].split(".")
-    series_name = f"{major}.{str(minor)[:-1] + "x"}" if int(minor) >= 10 else f"{major}.x"
+    series_name = f"{major}.{str(minor)[:-1]}x" if int(minor) >= 10 else f"{major}.x"
     save_path = f"apk/{major}/{series_name}/"
     os.makedirs(save_path, exist_ok=True)
 
