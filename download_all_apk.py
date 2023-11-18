@@ -1,11 +1,11 @@
 import os
-import httpx
 import logging
 import concurrent.futures
+import httpx
 
 headers = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 "
-                  "Safari/537.36"}
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+                  "Chrome/115.0.0.0 Safari/537.36"}
 overwrite_apk = True
 
 logging.basicConfig(
@@ -16,34 +16,52 @@ log = logger = logging
 
 
 def get_latest_version() -> str:
+    """
+    获取当前最新版本的版本号(web api)
+
+    :return: 最新版本的版本号
+    """
     log.info('Get latest version')
     req = httpx.get(
-        "https://bbs-api.miyoushe.com/misc/wapi/getLatestPkgVer?channel=miyousheluodi", headers=headers)
+        "https://bbs-api.miyoushe.com/misc/wapi/getLatestPkgVer?channel=miyousheluodi",
+        headers=headers)
     data = req.json()
     log.info(f'Latest version: {data["data"]["version"]}')
     return data["data"]["version"]
 
 
 def generate_predicted_version_dict() -> dict:
+    """
+    生成预测的版本号字典
+
+    :return: 预测的版本号字典
+    """
     version_dict = {}
     latest_version = get_latest_version().split(".")
     for major in range(1, int(latest_version[0]) + 1):
         if major == int(latest_version[0]):
             for minor in range(0, int(latest_version[1])):
                 k_value = f"{major}.{minor}"
-                version_dict[k_value] = [rev for rev in range(0, 10)]
+                version_dict[k_value] = list(range(0, 10))
         elif major == 1:
             for minor in range(0, 10):
                 k_value = f"{major}.{minor}"
-                version_dict[k_value] = [rev for rev in range(0, 10)]
+                version_dict[k_value] = list(range(0, 10))
         else:
             for minor in range(0, 100):
                 k_value = f"{major}.{minor}"
-                version_dict[k_value] = [rev for rev in range(0, 10)]
+                version_dict[k_value] = list(range(0, 10))
     return version_dict
 
 
 def generate_available_version_list(major_minor_str: str, rev_list: list) -> list:
+    """
+    生成可用的版本号列表
+
+    :param major_minor_str: 版本号字符串
+    :param rev_list: 版本号列表
+    :return: 可用的版本号列表
+    """
     client = httpx.Client(headers=headers, http2=True)
     major, minor = major_minor_str.split(".")
     available_version_num_list = []
@@ -52,24 +70,32 @@ def generate_available_version_list(major_minor_str: str, rev_list: list) -> lis
     channel = "gf" if int(minor) <= 45 and int(major) in [1, 2] else "miyousheluodi"
     for rev in rev_list:
         this_version = f"{major_minor_str}.{rev}"
-        download_url = f"https://download-bbs.miyoushe.com/app/mihoyobbs_{this_version}_{channel}.apk"
-        if client.head(download_url).status_code == 404:
+        download_url = f"https://download-bbs.miyoushe.com/app/" \
+                       f"mihoyobbs_{this_version}_{channel}.apk"
+        resp = client.head(download_url)
+        if resp.status_code == 404:
             log.info(f"Version {this_version} not found")
             if downloaded:
                 break
             continue
-        elif client.head(download_url).status_code == 200:
+        if resp.status_code == 200:
             log.info(f"Version {this_version} is available")
             available_version_url_list.append(download_url)
             available_version_num_list.append(this_version)
             downloaded = True
         else:
-            log.error(f"Version {this_version} unknown error: {client.head(download_url).status_code}")
+            log.error(f"Version {this_version} unknown error: {resp.status_code}")
     log.info(f"Version {major_minor_str} check finished: {available_version_num_list} are available")
     return available_version_url_list
 
 
 def download_apk(url: str) -> bool:
+    """
+    下载apk文件
+
+    :param url: 下载地址
+    :return: 下载是否成功
+    """
     # check if the file exists already
     apk_file_name = url.split("/")[-1]
     major, minor, rev = url.split("_")[1].split(".")
@@ -88,12 +114,16 @@ def download_apk(url: str) -> bool:
     except OSError:
         log.error(f"Save version {apk_file_name} failed")
         return False
-    else:
-        log.info(f"Download version {apk_file_name} OK")
-        return True
+    log.info(f"Download version {apk_file_name} OK")
+    return True
 
 
-def download_all_versions():
+def download_all_versions() -> None:
+    """
+    下载所有可用版本
+
+    :return: None
+    """
     log.info("Start fetch all versions metadata")
     cpu_count = os.cpu_count()
     all_available_versions = []
