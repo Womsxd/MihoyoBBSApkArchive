@@ -14,8 +14,9 @@ import os
 import logging
 import argparse
 import concurrent.futures
-
+import re
 import httpx
+from collections import defaultdict
 
 OVERWRITE_APK = True
 
@@ -28,6 +29,58 @@ logging.basicConfig(
     format='%(asctime)s %(levelname)s %(message)s',
     datefmt='%Y-%m-%dT%H:%M:%S')
 log = logger = logging
+
+
+def generate_2x_md(available_versions: list) -> None:
+    """
+    生成2.x.md文件
+
+    :param available_versions: 可用的版本号列表
+    :return: None
+    """
+    print(available_versions)
+    version_pattern = re.compile(r'mihoyobbs_(\d+)\.(\d+)\.\d+')
+    grouped_urls = defaultdict(list)
+
+    markdown_part_one = """# 2.x 版本的米游社
+    
+## 快速跳转
+    """
+    markdown_part_two = ""
+    for url in available_versions:
+        match = version_pattern.search(url)
+        if match:
+            # Extract the second number
+            second_number = match.group(2)
+            # Check if the second number is a single digit
+            if len(second_number) == 1:
+                group_key = f"{match.group(1)}.0x"
+            else:
+                group_key = f"{match.group(1)}.{second_number[0]}x"
+            grouped_urls[group_key].append({"version": match.group(0).replace("mihoyobbs_", ""), "url": url})
+
+    for group in sorted(grouped_urls.keys()):
+        if group == "1.0x":
+            continue
+        markdown_part_two += (
+            f"\n### {group}版\n\n"
+            f"| 版本号 | 下载地址 |\n"
+            f"| --- | --- |\n"
+        )
+        markdown_part_one += f"\n[{group}版本](#{group}版)\n"
+
+        # Sort the version data numerically
+        sorted_versions = sorted(
+            grouped_urls[group],
+            key=lambda v_n: tuple(map(int, v_n["version"].split('.')))
+        )
+
+        for v in sorted_versions:
+            markdown_part_two += f"| {v['version']} | <{v['url']}> |\n"
+
+    # Write to file
+    with open("2.x.md", "w", encoding='utf-8') as f:
+        f.write(markdown_part_one + markdown_part_two)
 
 
 def get_latest_version() -> str:
@@ -171,6 +224,8 @@ def download_all_versions() -> None:
             result = future.result()
             if not result:
                 log.error("Some downloads failed")
+
+    generate_2x_md(all_available_versions)
 
 
 def parse_args() -> argparse.Namespace:
